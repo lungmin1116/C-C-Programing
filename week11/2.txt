@@ -1,0 +1,14 @@
+다음과 같이 구조체와 포인터 변수가 선언되어 있을 때, student1의 멤버 id에 값을 저장하는 방법으로 잘못된 것은?
+struct Student {
+	char name[50];
+	int id;
+};
+struct Student student1;
+struct Student * ptr = &student1;
+
+① student1.id = 20240001;
+② ptr->id = 20240001;
+③ (*ptr).id = 20240001;
+④ *ptr.id = 20240001;
+
+정답 : 4번
