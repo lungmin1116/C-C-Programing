@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GPS 이동 경로 시각화</title>
+  <!-- Leaflet CSS (API 키 불필요) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #map {
+      width: 100vw;
+      height: 100vh;
+    }
+    .info-panel {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 14px 18px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      font-size: 14px;
+      line-height: 1.6;
+      min-width: 210px;
+    }
+    .info-panel h3 {
+      font-size: 15px;
+      margin-bottom: 8px;
+      color: #111;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 6px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #374151;
+    }
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="info-panel" id="status-panel">
+    <h3>GPS 경로 정보</h3>
+    <div id="summary">데이터 불러오는 중...</div>
+    <div style="margin-top: 8px;">
+      <div class="legend-item"><span class="dot" style="background: #16a34a;"></span> 출발 지점</div>
+      <div class="legend-item"><span class="dot" style="background: #2563eb;"></span> 경유 지점</div>
+      <div class="legend-item"><span class="dot" style="background: #dc2626;"></span> 도착 지점</div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <script>
+    // 1. 지도 초기화
+    const map = L.map("map").setView([42.363, -71.092], 16);
+
+    // 2. OpenStreetMap 타일 레이어 추가 (무료, 키 불필요)
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    // 3. output.json 데이터 로드 및 렌더링
+    fetch("output.json")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP 오류! 상태 코드: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((data) => {
+        if (!Array.isArray(data) || data.length === 0) {
+          document.getElementById("summary").textContent = "표시할 GPS 데이터가 없습니다.";
+          return;
+        }
+
+        const latLngs = [];
+
+        data.forEach((point, index) => {
+          const lat = point.latitude;
+          // JSON 키의 'longtitude' 철자 및 표준 'longitude' 모두 호환되도록 처리
+          const lng = point.longtitude ?? point.longitude;
+          const info = point.info || "정보 없음";
+
+          if (typeof lat !== "number" || typeof lng !== "number") return;
+
+          latLngs.push([lat, lng]);
+
+          // 출발(초록), 도착(빨강), 중간 지점(파랑) 색상 구분
+          const isStart = index === 0;
+          const isEnd = index === data.length - 1;
+          const markerColor = isStart ? "#16a34a" : isEnd ? "#dc2626" : "#2563eb";
+          const label = isStart ? "출발" : isEnd ? "도착" : `#${index + 1}`;
+
+          const marker = L.circleMarker([lat, lng], {
+            radius: isStart || isEnd ? 8 : 6,
+            fillColor: markerColor,
+            color: "#ffffff",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: 0.9
+          }).addTo(map);
+
+          // 클릭 시 팝업 & 마우스 올릴 때 툴팁 표시
+          const popupContent = `
+            <strong>[${label}]</strong><br>
+            ${info}<br>
+            <small>위도: ${lat}, 경도: ${lng}</small>
+          `;
+          marker.bindPopup(popupContent);
+          marker.bindTooltip(`${label}: ${info}`, { direction: "top" });
+        });
+
+        // 4. 이동 경로 선(Polyline) 그리기
+        const pathLine = L.polyline(latLngs, {
+          color: "#2563eb",
+          weight: 4,
+          opacity: 0.75,
+          dashArray: "6, 6"
+        }).addTo(map);
+
+        // 5. 전체 경로가 한눈에 들어오도록 지도 화면 자동 맞춤
+        map.fitBounds(pathLine.getBounds(), { padding: [50, 50] });
+
+        document.getElementById("summary").innerHTML = `
+          총 기록 지점: <strong>${latLngs.length}개</strong><br>
+          시작: ${data[0].info}<br>
+          종료: ${data[data.length - 1].info}
+        `;
+      })
+      .catch((error) => {
+        console.error("JSON 로드 실패:", error);
+        document.getElementById("summary").innerHTML = `
+          <span style="color: #dc2626;">output.json을 불러오지 못했습니다.</span><br>
+          <small>로컬 웹 서버(localhost:8000)로 접속했는지 확인하세요.</small>
+        `;
+      });
+  </script>
+</body>
+</html>
